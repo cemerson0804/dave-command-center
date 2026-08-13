@@ -22,28 +22,61 @@ st.set_page_config(page_title="Dave Command Center", page_icon="💰", layout="w
 
 
 # =============================================================================
-# PASSWORD GATE
+# PASSWORD GATE (with 15-minute cookie memory)
 # =============================================================================
+import extra_streamlit_components as stx
+import hashlib
+import time
+
+def get_cookie_manager():
+    return stx.CookieManager(key="dave_cookies")
+
+cookie_manager = get_cookie_manager()
+
 def check_password():
-    """Returns True if correct password entered."""
+    """
+    Returns True if authenticated.
+    Uses a browser cookie to remember login for 15 minutes.
+    """
+    # Check if cookie exists and is still valid
+    auth_cookie = cookie_manager.get("dave_auth")
+    expire_cookie = cookie_manager.get("dave_auth_expires")
+    
+    if auth_cookie and expire_cookie:
+        try:
+            expire_time = float(expire_cookie)
+            if time.time() < expire_time:
+                # Cookie is valid and not expired
+                expected = hashlib.sha256(st.secrets["passwords"]["app_password"].encode()).hexdigest()[:16]
+                if auth_cookie == expected:
+                    return True
+        except:
+            pass
+    
+    # No valid cookie — show password prompt
     def password_entered():
-        if st.session_state["password"] == st.secrets["passwords"]["app_password"]:
+        if st.session_state.get("password") == st.secrets["passwords"]["app_password"]:
             st.session_state["password_correct"] = True
+            # Set cookie for 15 minutes
+            token = hashlib.sha256(st.secrets["passwords"]["app_password"].encode()).hexdigest()[:16]
+            expires = time.time() + (15 * 60)  # 15 minutes from now
+            cookie_manager.set("dave_auth", token, key="set_auth")
+            cookie_manager.set("dave_auth_expires", str(expires), key="set_expires")
             del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
-    if "password_correct" not in st.session_state:
-        st.title("Dave Command Center")
-        st.text_input("Enter password:", type="password", on_change=password_entered, key="password")
-        st.caption("Household financial dashboard")
-        return False
-    elif not st.session_state["password_correct"]:
-        st.title("Dave Command Center")
-        st.text_input("Enter password:", type="password", on_change=password_entered, key="password")
+    if st.session_state.get("password_correct"):
+        return True
+
+    st.title("Dave Command Center")
+    st.text_input("Enter password:", type="password", on_change=password_entered, key="password")
+    st.caption("Household financial dashboard")
+    
+    if st.session_state.get("password_correct") == False:
         st.error("Incorrect password.")
-        return False
-    return True
+    
+    return False
 
 
 if not check_password():
