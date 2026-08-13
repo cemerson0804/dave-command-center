@@ -336,7 +336,9 @@ with tab2:
         uncategorized = df[df['Category'] == 'Uncategorized']
         if not uncategorized.empty:
             st.subheader(f"Uncategorized ({len(uncategorized)})")
-            st.dataframe(uncategorized[['Date', 'Amount', 'Description']].head(20), use_container_width=True)
+            uncategorized_display = uncategorized[['Date', 'Amount', 'Description']].head(20).copy()
+            uncategorized_display['Amount'] = uncategorized_display['Amount'].apply(lambda x: f"${x:,.2f}")
+            st.dataframe(uncategorized_display, use_container_width=True)
 
 
 # --- TAB 3: DEBT TRACKER ---
