@@ -75,16 +75,55 @@ def load_income():
 
 
 # =============================================================================
-# MAIN APP
+# INITIALIZE SESSION STATE
+# =============================================================================
+if 'transactions' not in st.session_state:
+    st.session_state.transactions = pd.DataFrame()
+if 'statements_parsed' not in st.session_state:
+    st.session_state.statements_parsed = []
+
+
+# =============================================================================
+# MAIN APP HEADER
 # =============================================================================
 st.title("Dave Command Center")
-st.caption(f"Opened: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}")
 
-profile = st.radio("Who's viewing?", ["Cody", "Deidra", "Household"], horizontal=True)
+# Profile selector and Month/Year selector on the same row
+col_profile, col_month, col_year = st.columns([2, 1, 1])
 
+with col_profile:
+    profile = st.radio("Who's viewing?", ["Cody", "Deidra", "Household"], horizontal=True)
+
+with col_month:
+    current_month = datetime.now().month
+    selected_month = st.selectbox(
+        "Month",
+        options=list(range(1, 13)),
+        format_func=lambda m: datetime(2026, m, 1).strftime('%B'),
+        index=current_month - 1
+    )
+
+with col_year:
+    current_year = datetime.now().year
+    selected_year = st.selectbox(
+        "Year",
+        options=list(range(2025, current_year + 2)),
+        index=current_year - 2025
+    )
+
+st.caption(f"Viewing: **{datetime(selected_year, selected_month, 1).strftime('%B %Y')}** | Profile: **{profile}**")
+
+# Load data
 bills = load_bills(profile)
 debts = load_debts()
 income_data = load_income()
+
+# Filter transactions to selected month if data exists
+df_all = st.session_state.transactions
+if not df_all.empty:
+    df = df_all[(df_all['Date'].dt.month == selected_month) & (df_all['Date'].dt.year == selected_year)].copy()
+else:
+    df = pd.DataFrame()
 
 
 # =============================================================================
@@ -96,15 +135,26 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["Bills Board", "Spending", "Debt Tracker
 # --- TAB 1: BILLS BOARD ---
 with tab1:
     st.header(f"Bills Board — {profile}")
+    st.caption(f"{datetime(selected_year, selected_month, 1).strftime('%B %Y')}")
 
     today = datetime.now()
-    current_day = today.day
+    # Use current day if viewing current month, otherwise show all as "upcoming" or "paid"
+    if selected_month == today.month and selected_year == today.year:
+        current_day = today.day
+    elif (selected_year < today.year) or (selected_year == today.year and selected_month < today.month):
+        current_day = 32  # Past month — everything shows as "paid"
+    else:
+        current_day = 0  # Future month — everything shows as "upcoming"
 
     upcoming, due_soon, paid, overdue = [], [], [], []
 
     for bill in bills:
         due_day = bill['day']
-        if due_day < current_day - 5:
+        if current_day == 32:
+            paid.append(bill)
+        elif current_day == 0:
+            upcoming.append(bill)
+        elif due_day < current_day - 5:
             paid.append(bill)
         elif due_day < current_day:
             if bill.get('autopay', False):
@@ -146,16 +196,12 @@ with tab1:
 # --- TAB 2: SPENDING ---
 with tab2:
     st.header("Spending Breakdown")
-
-    if 'transactions' not in st.session_state:
-        st.session_state.transactions = pd.DataFrame()
-
-    df = st.session_state.transactions
+    st.caption(f"{datetime(selected_year, selected_month, 1).strftime('%B %Y')}")
 
     if df.empty:
-        st.info("No transactions loaded. Go to the **Upload** tab to drop your bank CSV exports.")
+        st.info("No transactions for this month. Upload bank CSVs in the **Upload** tab, then select the correct month above.")
     else:
-        st.caption(f"Data: {df['Date'].min().date()} to {df['Date'].max().date()} ({len(df)} transactions)")
+        st.caption(f"{len(df)} transactions in this month")
 
         if profile == "Deidra":
             summary = get_spending_summary(df, exclude_wife=False)
@@ -184,10 +230,12 @@ with tab2:
             fig_bar.update_layout(showlegend=False, xaxis_tickangle=-45, height=400)
             st.plotly_chart(fig_bar, use_container_width=True)
 
-            monthly = get_spending_by_month(df)
-            if not monthly.empty:
-                st.subheader("Monthly Trend")
-                fig_trend = px.bar(monthly, x='Month', y='Amount', color='Category', barmode='stack', title='Monthly Spending')
+        # Show all-time trend if we have multi-month data
+        if not df_all.empty:
+            monthly = get_spending_by_month(df_all)
+            if not monthly.empty and len(monthly['Month'].unique()) > 1:
+                st.subheader("Monthly Trend (All Data)")
+                fig_trend = px.bar(monthly, x='Month', y='Amount', color='Category', barmode='stack', title='Spending Over Time')
                 fig_trend.update_layout(height=400)
                 st.plotly_chart(fig_trend, use_container_width=True)
 
@@ -296,109 +344,134 @@ with tab4:
 # --- TAB 5: UPLOAD ---
 with tab5:
     st.header("Upload Financial Data")
-    st.caption("Drop your files here — the system auto-detects whether it's a bank CSV or a bill PDF and processes accordingly. Nothing is stored on the server.")
+    st.caption("Drop your bank CSVs and bill PDFs below. Nothing processes until you click **Analyze**. Files clear after processing.")
 
     uploaded_files = st.file_uploader(
         "Drop bank CSVs and bill PDFs here",
         type=['csv', 'pdf'],
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        key="file_uploader"
     )
 
     if uploaded_files:
-        csv_files = [f for f in uploaded_files if f.name.lower().endswith('.csv')]
-        pdf_files = [f for f in uploaded_files if f.name.lower().endswith('.pdf')]
+        st.write(f"**{len(uploaded_files)} file(s) staged:**")
+        for f in uploaded_files:
+            icon = "📄" if f.name.lower().endswith('.csv') else "📑"
+            st.write(f"{icon} {f.name} ({f.size / 1024:.1f} KB)")
 
-        # Process CSVs (bank transactions)
-        if csv_files:
-            st.subheader(f"Bank Transactions ({len(csv_files)} files)")
-            all_dfs = []
-            for f in csv_files:
-                try:
-                    parsed = parse_csv_upload(f)
-                    all_dfs.append(parsed)
-                    st.success(f"Parsed: {f.name} ({len(parsed)} transactions)")
-                except Exception as e:
-                    st.error(f"Error with {f.name}: {e}")
+        st.divider()
 
-            if all_dfs:
-                combined = pd.concat(all_dfs, ignore_index=True)
-                combined = combined.drop_duplicates(subset=['Date', 'Amount', 'Description'], keep='first')
-                combined = combined.sort_values('Date', ascending=False).reset_index(drop=True)
-                st.session_state.transactions = combined
-                st.info(f"Loaded {len(combined)} transactions. Go to **Spending** tab to see charts.")
+        # THE ANALYZE BUTTON
+        if st.button("Analyze", type="primary", use_container_width=True):
+            csv_files = [f for f in uploaded_files if f.name.lower().endswith('.csv')]
+            pdf_files = [f for f in uploaded_files if f.name.lower().endswith('.pdf')]
 
-        # Process PDFs (bill statements)
-        if pdf_files:
-            st.subheader(f"Bill Statements ({len(pdf_files)} files)")
-            import pdfplumber
-            import re
+            # Process CSVs
+            if csv_files:
+                st.subheader(f"Bank Transactions ({len(csv_files)} files)")
+                all_dfs = []
+                for f in csv_files:
+                    try:
+                        parsed = parse_csv_upload(f)
+                        all_dfs.append(parsed)
+                        st.success(f"Parsed: {f.name} ({len(parsed)} transactions)")
+                    except Exception as e:
+                        st.error(f"Error with {f.name}: {e}")
 
-            for f in pdf_files:
-                try:
-                    # Read PDF text
-                    pdf = pdfplumber.open(f)
-                    text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-                    pdf.close()
-
-                    if not text.strip():
-                        st.warning(f"{f.name}: Image-based PDF — cannot extract text automatically.")
-                        continue
-
-                    # Auto-detect statement type and show key info
-                    st.write(f"**{f.name}**")
-
-                    # Chase
-                    if "chase" in text.lower() and ("sapphire" in text.lower() or "cardhelp" in text.lower()):
-                        amounts = re.findall(r'([\d,]+\.\d{2})', text)
-                        cc_amounts = [float(a.replace(',', '')) for a in amounts if 5000 < float(a.replace(',', '')) < 50000]
-                        balance = max(set(cc_amounts), key=cc_amounts.count) if cc_amounts else "Unknown"
-                        interest_match = re.search(r'PURCHASE INTEREST CHARGE\s*([\d,]+\.\d{2})', text)
-                        interest = float(interest_match.group(1).replace(',', '')) if interest_match else "Unknown"
-                        due_match = re.search(r'(\d{2}/\d{2}/\d{2})', text)
-                        due = due_match.group(1) if due_match else "Unknown"
-                        st.success(f"Chase Credit Card — Balance: ${balance:,.2f} | Interest: ${interest} | Due: {due}")
-
-                    # Toyota Financial
-                    elif "toyota" in text.lower() and "financial" in text.lower():
-                        bal_match = re.search(r'OutstandingBalance\*?\s*\$?([\d,]+\.?\d*)', text)
-                        balance = float(bal_match.group(1).replace(',', '')) if bal_match else "Unknown"
-                        due_match = re.search(r'PaymentDueDate\s*(\d+/\d+/\d+)', text)
-                        due = due_match.group(1) if due_match else "Unknown"
-                        pmt_match = re.search(r'CurrentPaymentDue\s*\$?([\d,]+\.?\d*)', text)
-                        pmt = float(pmt_match.group(1).replace(',', '')) if pmt_match else "Unknown"
-                        st.success(f"Toyota Financial — Balance: ${balance:,.2f} | Payment: ${pmt} | Due: {due}")
-
-                    # Wells Fargo
-                    elif "wells fargo" in text.lower():
-                        amounts = re.findall(r'[\d,]+\.\d{2}', text)
-                        payoff_amounts = [float(a.replace(',', '')) for a in amounts if 5000 < float(a.replace(',', '')) < 50000]
-                        payoff = payoff_amounts[0] if payoff_amounts else "Unknown"
-                        due_match = re.search(r'Payment due date\s*(\d{2}/\d{2}/\d{2,4})', text)
-                        due = due_match.group(1) if due_match else "Unknown"
-                        past_match = re.search(r'Amount past due\s*\$?([\d,]+\.?\d*)', text)
-                        past_due = float(past_match.group(1).replace(',', '')) if past_match else 0
-                        st.success(f"Wells Fargo Auto — Payoff: ${payoff:,.2f} | Due: {due} | Past Due: ${past_due:,.2f}")
-
+                if all_dfs:
+                    new_data = pd.concat(all_dfs, ignore_index=True)
+                    # Merge with existing data (keeps history across uploads)
+                    if not st.session_state.transactions.empty:
+                        combined = pd.concat([st.session_state.transactions, new_data], ignore_index=True)
                     else:
-                        st.info(f"Recognized as bill statement but type unknown. First 200 chars: {text[:200]}")
+                        combined = new_data
+                    combined = combined.drop_duplicates(subset=['Date', 'Amount', 'Description'], keep='first')
+                    combined = combined.sort_values('Date', ascending=False).reset_index(drop=True)
+                    st.session_state.transactions = combined
+                    st.info(f"Total transactions in memory: {len(combined)}. Select a month above and check **Spending** tab.")
 
-                except Exception as e:
-                    st.error(f"Error reading {f.name}: {e}")
+            # Process PDFs
+            if pdf_files:
+                st.subheader(f"Bill Statements ({len(pdf_files)} files)")
+                import pdfplumber
+                import re
 
+                for f in pdf_files:
+                    try:
+                        pdf = pdfplumber.open(f)
+                        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+                        pdf.close()
+
+                        if not text.strip():
+                            st.warning(f"{f.name}: Image-based PDF — cannot extract text.")
+                            continue
+
+                        # Auto-detect and display
+                        if "chase" in text.lower() and ("sapphire" in text.lower() or "cardhelp" in text.lower()):
+                            amounts = re.findall(r'([\d,]+\.\d{2})', text)
+                            cc_amounts = [float(a.replace(',', '')) for a in amounts if 5000 < float(a.replace(',', '')) < 50000]
+                            balance = max(set(cc_amounts), key=cc_amounts.count) if cc_amounts else "Unknown"
+                            interest_match = re.search(r'PURCHASE INTEREST CHARGE\s*([\d,]+\.\d{2})', text)
+                            interest = float(interest_match.group(1).replace(',', '')) if interest_match else "Unknown"
+                            due_match = re.search(r'(\d{2}/\d{2}/\d{2})', text)
+                            due = due_match.group(1) if due_match else "Unknown"
+                            st.success(f"**Chase Credit Card** — Balance: ${balance:,.2f} | Interest: ${interest} | Due: {due}")
+
+                        elif "toyota" in text.lower() and "financial" in text.lower():
+                            bal_match = re.search(r'OutstandingBalance\*?\s*\$?([\d,]+\.?\d*)', text)
+                            balance = float(bal_match.group(1).replace(',', '')) if bal_match else "Unknown"
+                            due_match = re.search(r'PaymentDueDate\s*(\d+/\d+/\d+)', text)
+                            due = due_match.group(1) if due_match else "Unknown"
+                            pmt_match = re.search(r'CurrentPaymentDue\s*\$?([\d,]+\.?\d*)', text)
+                            pmt = float(pmt_match.group(1).replace(',', '')) if pmt_match else "Unknown"
+                            st.success(f"**Toyota Financial** — Balance: ${balance:,.2f} | Payment: ${pmt} | Due: {due}")
+
+                        elif "wells fargo" in text.lower():
+                            amounts = re.findall(r'[\d,]+\.\d{2}', text)
+                            payoff_amounts = [float(a.replace(',', '')) for a in amounts if 5000 < float(a.replace(',', '')) < 50000]
+                            payoff = payoff_amounts[0] if payoff_amounts else "Unknown"
+                            due_match = re.search(r'Payment due date\s*(\d{2}/\d{2}/\d{2,4})', text)
+                            due = due_match.group(1) if due_match else "Unknown"
+                            past_match = re.search(r'Amount past due\s*\$?([\d,]+\.?\d*)', text)
+                            past_due = float(past_match.group(1).replace(',', '')) if past_match else 0
+                            st.success(f"**Wells Fargo Auto** — Payoff: ${payoff:,.2f} | Due: {due} | Past Due: ${past_due:,.2f}")
+
+                        else:
+                            st.info(f"**{f.name}** — Statement detected but type not recognized.")
+
+                        st.session_state.statements_parsed.append({"file": f.name, "date": datetime.now().strftime('%Y-%m-%d')})
+
+                    except Exception as e:
+                        st.error(f"Error reading {f.name}: {e}")
+
+            st.divider()
+            st.success("Analysis complete. Files processed. You can close this tab and check your other tabs.")
+            st.caption("To upload more files, refresh the page (F5) and the upload box will clear.")
+
+    else:
+        st.write("No files staged. Drag and drop your bank CSVs and bill PDFs above.")
+
+    # Show session data status
     st.divider()
-    st.subheader("Current Session Data")
-    if not st.session_state.get('transactions', pd.DataFrame()).empty:
+    st.subheader("Session Data")
+    if not st.session_state.transactions.empty:
         df_status = st.session_state.transactions
-        st.write(f"**Transactions loaded:** {len(df_status)}")
+        st.write(f"**Transactions in memory:** {len(df_status)}")
         st.write(f"**Date range:** {df_status['Date'].min().date()} to {df_status['Date'].max().date()}")
+        months_covered = df_status['Date'].dt.to_period('M').nunique()
+        st.write(f"**Months covered:** {months_covered}")
     else:
         st.write("No transaction data loaded this session.")
+
+    if st.session_state.statements_parsed:
+        st.write(f"**Statements analyzed this session:** {len(st.session_state.statements_parsed)}")
 
 
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("Quick Stats")
     st.write(f"**Profile:** {profile}")
+    st.write(f"**Viewing:** {datetime(selected_year, selected_month, 1).strftime('%B %Y')}")
     st.write(f"**Today:** {datetime.now().strftime('%b %d, %Y')}")
 
     if profile in ("Cody", "Household") and income_data:
