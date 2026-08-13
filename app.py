@@ -1,8 +1,8 @@
-"""
-Dave Command Center — Cloud Version (Secure)
+﻿"""
+Dave Command Center --- Cloud Version (Secure)
 ==============================================
 All personal financial data is stored in Streamlit Secrets (encrypted).
-This code is GENERIC — safe to be public on GitHub.
+This code is GENERIC --- safe to be public on GitHub.
 No names, balances, account numbers, or amounts in this file.
 """
 
@@ -18,11 +18,11 @@ from database import save_transactions, load_transactions, get_transaction_count
 # =============================================================================
 # PAGE CONFIG
 # =============================================================================
-st.set_page_config(page_title="Dave Command Center", page_icon="💰", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Dave Command Center", page_icon="----", layout="wide", initial_sidebar_state="collapsed")
 
 
 # =============================================================================
-# PASSWORD GATE (with session memory — no re-login on refresh within same session)
+# PASSWORD GATE (with session memory --- no re-login on refresh within same session)
 # =============================================================================
 import time
 
@@ -109,7 +109,7 @@ if not st.session_state.db_loaded:
         st.session_state.db_loaded = True
     except Exception as e:
         st.session_state.db_loaded = True  # Don't retry on error
-        # Silently continue — app still works with uploads
+        # Silently continue --- app still works with uploads
 
 # Profile selector and Month/Year selector on the same row
 col_profile, col_month, col_year = st.columns([2, 1, 1])
@@ -157,7 +157,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["Bills Board", "Spending", "Debt Tracker
 
 # --- TAB 1: BILLS BOARD ---
 with tab1:
-    st.header(f"Bills Board — {profile}")
+    st.header(f"Bills Board --- {profile}")
     st.caption(f"{datetime(selected_year, selected_month, 1).strftime('%B %Y')}")
 
     # Load payment statuses from database
@@ -198,7 +198,7 @@ with tab1:
     for bill in unpaid_bills:
         due_day = bill['day']
         if current_day == 32:
-            # Past month and not marked paid — overdue
+            # Past month and not marked paid --- overdue
             overdue.append(bill)
         elif current_day == 0:
             upcoming.append(bill)
@@ -246,7 +246,7 @@ with tab1:
     with col2:
         st.subheader(f"Due Soon ({len(due_soon)})")
         for bill in due_soon:
-            st.warning(f"**{bill['name']}**\n${bill['amount']:,.2f} — due {bill['day']}th")
+            st.warning(f"**{bill['name']}**\n${bill['amount']:,.2f} --- due {bill['day']}th")
             if st.button(f"Mark Paid", key=f"pay_{bill['name']}_{selected_month}_{selected_year}"):
                 try:
                     mark_bill_paid(bill['name'], profile, selected_month, selected_year)
@@ -257,7 +257,7 @@ with tab1:
     with col3:
         st.subheader(f"Upcoming ({len(upcoming)})")
         for bill in upcoming:
-            st.info(f"**{bill['name']}**\n${bill['amount']:,.2f} — due {bill['day']}th")
+            st.info(f"**{bill['name']}**\n${bill['amount']:,.2f} --- due {bill['day']}th")
             if st.button(f"Mark Paid", key=f"pay_{bill['name']}_{selected_month}_{selected_year}_up"):
                 try:
                     mark_bill_paid(bill['name'], profile, selected_month, selected_year)
@@ -268,7 +268,7 @@ with tab1:
     with col4:
         st.subheader(f"Overdue ({len(overdue)})")
         for bill in overdue:
-            st.error(f"**{bill['name']}**\n${bill['amount']:,.2f} — WAS DUE {bill['day']}th!")
+            st.error(f"**{bill['name']}**\n${bill['amount']:,.2f} --- WAS DUE {bill['day']}th!")
             if st.button(f"Mark Paid", key=f"pay_{bill['name']}_{selected_month}_{selected_year}_od"):
                 try:
                     mark_bill_paid(bill['name'], profile, selected_month, selected_year)
@@ -361,18 +361,18 @@ with tab3:
         for debt in debts:
             status = debt.get('status', 'Active')
             if status == 'PAID OFF':
-                st.success(f"~~{debt['name']}~~ — **DEAD** ({debt.get('killed_date', '')})")
+                st.success(f"~~{debt['name']}~~ --- **DEAD** ({debt.get('killed_date', '')})")
             elif status == 'CURRENT TARGET':
-                st.warning(f"**{debt['name']}** — ${debt.get('balance', 0):,.2f} at {debt.get('apr', 0)}% | CURRENT TARGET")
+                st.warning(f"**{debt['name']}** --- ${debt.get('balance', 0):,.2f} at {debt.get('apr', 0)}% | CURRENT TARGET")
                 if debt.get('promo_deadline'):
                     st.caption(f"Promo deadline: {debt['promo_deadline']}")
             elif status == '0% Promo':
-                st.info(f"**{debt['name']}** — ${debt.get('balance', 0):,.2f} at 0% | Min ${debt.get('minimum', 0)}/mo | Promo ends {debt.get('promo_deadline', '?')}")
+                st.info(f"**{debt['name']}** --- ${debt.get('balance', 0):,.2f} at 0% | Min ${debt.get('minimum', 0)}/mo | Promo ends {debt.get('promo_deadline', '?')}")
             elif status == 'Baby Step 6':
-                st.info(f"{debt['name']} — ${debt.get('balance', 0):,.2f} at {debt.get('apr', 0)}% | After cards die")
+                st.info(f"{debt['name']} --- ${debt.get('balance', 0):,.2f} at {debt.get('apr', 0)}% | After cards die")
             else:
                 daily = debt.get('daily_interest', 0)
-                st.write(f"**{debt['name']}** — ${debt.get('balance', 0):,.2f} at {debt.get('apr', 0)}% | Min ${debt.get('minimum', 0)}/mo | ${daily:.2f}/day")
+                st.write(f"**{debt['name']}** --- ${debt.get('balance', 0):,.2f} at {debt.get('apr', 0)}% | Min ${debt.get('minimum', 0)}/mo | ${daily:.2f}/day")
 
         st.divider()
         interest_data = [{"Debt": d['name'], "Monthly Interest": d.get('daily_interest', 0) * 30} for d in debts if d.get('daily_interest', 0) > 0]
@@ -381,7 +381,7 @@ with tab3:
             fig_int.update_layout(showlegend=False, height=350)
             st.plotly_chart(fig_int, use_container_width=True)
     else:
-        st.info("Deidra's debt tracking — add her debt info to secrets to populate this view.")
+        st.info("Deidra's debt tracking --- add her debt info to secrets to populate this view.")
 
 
 # --- TAB 4: CASH FLOW ---
@@ -529,23 +529,23 @@ with tab5:
                             interest = float(interest_match.group(1).replace(',', '')) if interest_match else "Unknown"
                             due_match = re_mod.search(r'(\d{2}/\d{2}/\d{2})', text)
                             due = due_match.group(1) if due_match else "Unknown"
-                            st.success(f"**Chase** � Balance: ${balance:,.2f} | Interest: ${interest} | Due: {due}")
+                            st.success(f"**Chase** - Balance: ${balance:,.2f} | Interest: ${interest} | Due: {due}")
 
                         elif "toyota" in text.lower() and "financial" in text.lower():
                             bal_match = re_mod.search(r'OutstandingBalance\*?\s*\$?([\d,]+\.?\d*)', text)
                             balance = float(bal_match.group(1).replace(',', '')) if bal_match else "Unknown"
                             due_match = re_mod.search(r'PaymentDueDate\s*(\d+/\d+/\d+)', text)
                             due = due_match.group(1) if due_match else "Unknown"
-                            st.success(f"**Toyota** � Balance: ${balance:,.2f} | Due: {due}")
+                            st.success(f"**Toyota** - Balance: ${balance:,.2f} | Due: {due}")
 
                         elif "wells fargo" in text.lower():
                             amounts = re_mod.findall(r'[\d,]+\.\d{2}', text)
                             payoff_amounts = [float(a.replace(',', '')) for a in amounts if 5000 < float(a.replace(',', '')) < 50000]
                             payoff = payoff_amounts[0] if payoff_amounts else "Unknown"
-                            st.success(f"**Wells Fargo** � Payoff: ${payoff:,.2f}")
+                            st.success(f"**Wells Fargo** - Payoff: ${payoff:,.2f}")
 
                         else:
-                            st.info(f"**{sf['name']}** � Type not recognized.")
+                            st.info(f"**{sf['name']}** - Type not recognized.")
 
                     except Exception as e:
                         st.error(f"Error: {sf['name']}: {e}")
