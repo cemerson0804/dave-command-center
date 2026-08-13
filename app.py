@@ -12,6 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from transaction_parser import parse_csv_upload, get_spending_summary, get_spending_by_month, get_income_summary
+from database import save_transactions, load_transactions, get_transaction_count
 
 
 # =============================================================================
@@ -81,12 +82,25 @@ if 'transactions' not in st.session_state:
     st.session_state.transactions = pd.DataFrame()
 if 'statements_parsed' not in st.session_state:
     st.session_state.statements_parsed = []
+if 'db_loaded' not in st.session_state:
+    st.session_state.db_loaded = False
 
 
 # =============================================================================
 # MAIN APP HEADER
 # =============================================================================
 st.title("Dave Command Center")
+
+# Load data from Supabase on first open
+if not st.session_state.db_loaded:
+    try:
+        db_data = load_transactions()
+        if not db_data.empty:
+            st.session_state.transactions = db_data
+        st.session_state.db_loaded = True
+    except Exception as e:
+        st.session_state.db_loaded = True  # Don't retry on error
+        # Silently continue — app still works with uploads
 
 # Profile selector and Month/Year selector on the same row
 col_profile, col_month, col_year = st.columns([2, 1, 1])
@@ -380,7 +394,14 @@ with tab5:
 
                 if all_dfs:
                     new_data = pd.concat(all_dfs, ignore_index=True)
-                    # Merge with existing data (keeps history across uploads)
+                    # Save to Supabase
+                    try:
+                        inserted, skipped = save_transactions(new_data, profile=profile.lower())
+                        st.success(f"Saved to database: {inserted} new transactions ({skipped} duplicates skipped)")
+                    except Exception as e:
+                        st.warning(f"Database save issue: {e}. Data still available in this session.")
+                    
+                    # Merge with local session data
                     if not st.session_state.transactions.empty:
                         combined = pd.concat([st.session_state.transactions, new_data], ignore_index=True)
                     else:
@@ -388,7 +409,7 @@ with tab5:
                     combined = combined.drop_duplicates(subset=['Date', 'Amount', 'Description'], keep='first')
                     combined = combined.sort_values('Date', ascending=False).reset_index(drop=True)
                     st.session_state.transactions = combined
-                    st.info(f"Total transactions in memory: {len(combined)}. Select a month above and check **Spending** tab.")
+                    st.info(f"Total transactions available: {len(combined)}. Select a month above and check **Spending** tab.")
 
             # Process PDFs
             if pdf_files:
@@ -453,10 +474,16 @@ with tab5:
 
     # Show session data status
     st.divider()
-    st.subheader("Session Data")
+    st.subheader("Data Status")
+    try:
+        db_count = get_transaction_count()
+        st.write(f"**Transactions in database:** {db_count}")
+    except:
+        st.write("**Database:** Not connected")
+    
     if not st.session_state.transactions.empty:
         df_status = st.session_state.transactions
-        st.write(f"**Transactions in memory:** {len(df_status)}")
+        st.write(f"**Loaded this session:** {len(df_status)}")
         st.write(f"**Date range:** {df_status['Date'].min().date()} to {df_status['Date'].max().date()}")
         months_covered = df_status['Date'].dt.to_period('M').nunique()
         st.write(f"**Months covered:** {months_covered}")
