@@ -1,4 +1,4 @@
-﻿"""
+"""
 Dave Command Center --- Cloud Version (Secure)
 ==============================================
 All personal financial data is stored in Streamlit Secrets (encrypted).

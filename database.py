@@ -1,8 +1,8 @@
 """
-Database Layer — Supabase Connection
+Database Layer --- Supabase Connection
 ======================================
 Handles saving and loading transaction data to/from Supabase.
-This gives the app permanent memory — data persists between sessions.
+This gives the app permanent memory --- data persists between sessions.
 
 HOW IT WORKS:
 - When you click "Analyze", transactions get saved to Supabase
@@ -78,7 +78,7 @@ def load_transactions(profile=None):
     if profile and profile != "Household":
         query = query.eq('profile', profile.lower())
     
-    # Supabase returns max 1000 rows by default — paginate if needed
+    # Supabase returns max 1000 rows by default --- paginate if needed
     all_data = []
     page_size = 1000
     offset = 0
@@ -161,7 +161,7 @@ def get_bill_payments(profile, month, year):
 def mark_bill_paid(bill_name, profile, month, year, paid=True):
     """
     Mark a bill as paid (or unpaid) for a specific month.
-    Uses upsert — creates the record if it doesn't exist, updates if it does.
+    Uses upsert --- creates the record if it doesn't exist, updates if it does.
     """
     client = get_supabase_client()
     
