@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from transaction_parser import parse_csv_upload, get_spending_summary, get_spending_by_month, get_income_summary
-from database import save_transactions, load_transactions, get_transaction_count, get_bill_payments, mark_bill_paid, mark_bill_unpaid
+from database import save_transactions, load_transactions, get_transaction_count, get_bill_payments, mark_bill_paid, mark_bill_unpaid, update_paid_date
 
 
 # =============================================================================
@@ -171,7 +171,12 @@ with tab1:
 
     for bill in bills:
         # Check if manually marked paid in the database
-        if payment_status.get(bill['name'], False):
+        bill_status = payment_status.get(bill['name'], {})
+        if isinstance(bill_status, dict) and bill_status.get('paid', False):
+            bill['paid_date'] = bill_status.get('paid_date')
+            paid_bills.append(bill)
+        elif isinstance(bill_status, bool) and bill_status:
+            bill['paid_date'] = None
             paid_bills.append(bill)
         else:
             unpaid_bills.append(bill)
@@ -201,13 +206,33 @@ with tab1:
     with col1:
         st.subheader(f"Paid ({len(paid_bills)})")
         for bill in paid_bills:
-            st.success(f"**{bill['name']}**\n${bill['amount']:,.2f}")
-            if st.button(f"Undo", key=f"undo_{bill['name']}_{selected_month}_{selected_year}"):
-                try:
-                    mark_bill_unpaid(bill['name'], profile, selected_month, selected_year)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
+            paid_date = bill.get('paid_date')
+            date_display = paid_date if paid_date else "date not recorded"
+            st.success(f"**{bill['name']}**\n${bill['amount']:,.2f}\nPaid: {date_display}")
+            
+            # Edit date and Undo in a row
+            col_edit, col_undo = st.columns(2)
+            with col_edit:
+                new_date = st.date_input(
+                    "Adjust date",
+                    value=datetime.strptime(paid_date, '%Y-%m-%d').date() if paid_date else datetime.now().date(),
+                    key=f"date_{bill['name']}_{selected_month}_{selected_year}",
+                    label_visibility="collapsed"
+                )
+                # Only save if date differs from what's stored
+                current_stored = paid_date if paid_date else datetime.now().strftime('%Y-%m-%d')
+                if str(new_date) != current_stored:
+                    try:
+                        update_paid_date(bill['name'], profile, selected_month, selected_year, str(new_date))
+                    except:
+                        pass
+            with col_undo:
+                if st.button("Undo", key=f"undo_{bill['name']}_{selected_month}_{selected_year}"):
+                    try:
+                        mark_bill_unpaid(bill['name'], profile, selected_month, selected_year)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
     with col2:
         st.subheader(f"Due Soon ({len(due_soon)})")

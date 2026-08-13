@@ -12,6 +12,7 @@ HOW IT WORKS:
 
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from supabase import create_client
 
 
@@ -140,17 +141,20 @@ def delete_transactions_by_month(year, month, profile="cody"):
 def get_bill_payments(profile, month, year):
     """
     Load bill payment statuses for a specific month.
-    Returns a dict: {bill_name: True/False}
+    Returns a dict: {bill_name: {"paid": True/False, "paid_date": "2026-08-03"}}
     """
     client = get_supabase_client()
-    result = client.table('bill_payments').select('bill_name, paid').eq(
+    result = client.table('bill_payments').select('bill_name, paid, paid_date').eq(
         'profile', profile.lower()
     ).eq('month', month).eq('year', year).execute()
     
     payments = {}
     if result.data:
         for row in result.data:
-            payments[row['bill_name']] = row['paid']
+            payments[row['bill_name']] = {
+                "paid": row['paid'],
+                "paid_date": row.get('paid_date')
+            }
     return payments
 
 
@@ -179,3 +183,13 @@ def mark_bill_paid(bill_name, profile, month, year, paid=True):
 def mark_bill_unpaid(bill_name, profile, month, year):
     """Move a bill back to unpaid (undo a paid mark)."""
     mark_bill_paid(bill_name, profile, month, year, paid=False)
+
+
+def update_paid_date(bill_name, profile, month, year, new_date):
+    """Update the paid date for a bill (for correcting timestamps)."""
+    client = get_supabase_client()
+    client.table('bill_payments').update(
+        {"paid_date": new_date}
+    ).eq('bill_name', bill_name).eq(
+        'profile', profile.lower()
+    ).eq('month', month).eq('year', year).execute()
