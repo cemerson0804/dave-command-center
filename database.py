@@ -193,3 +193,18 @@ def update_paid_date(bill_name, profile, month, year, new_date):
     ).eq('bill_name', bill_name).eq(
         'profile', profile.lower()
     ).eq('month', month).eq('year', year).execute()
+
+
+def delete_transaction(date, amount, description, profile="cody"):
+    """Delete a specific transaction from the database."""
+    client = get_supabase_client()
+    result = client.table('transactions').delete().eq(
+        'date', date
+    ).eq(
+        'amount', amount
+    ).eq(
+        'description', description
+    ).eq(
+        'profile', profile.lower()
+    ).execute()
+    return len(result.data) if result.data else 0

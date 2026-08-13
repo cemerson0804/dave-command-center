@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from transaction_parser import parse_csv_upload, get_spending_summary, get_spending_by_month, get_income_summary
-from database import save_transactions, load_transactions, get_transaction_count, get_bill_payments, mark_bill_paid, mark_bill_unpaid, update_paid_date
+from database import save_transactions, load_transactions, get_transaction_count, get_bill_payments, mark_bill_paid, mark_bill_unpaid, update_paid_date, delete_transaction
 
 
 # =============================================================================
@@ -336,9 +336,26 @@ with tab2:
         uncategorized = df[df['Category'] == 'Uncategorized']
         if not uncategorized.empty:
             st.subheader(f"Uncategorized ({len(uncategorized)})")
-            uncategorized_display = uncategorized[['Date', 'Amount', 'Description']].head(20).copy()
-            uncategorized_display['Amount'] = uncategorized_display['Amount'].apply(lambda x: f"${x:,.2f}")
-            st.dataframe(uncategorized_display, use_container_width=True)
+            st.caption("These need review. Delete duplicates or bad entries with the X button.")
+            for idx, row in uncategorized.head(20).iterrows():
+                col_desc, col_amt, col_del = st.columns([4, 1, 1])
+                with col_desc:
+                    st.write(f"{row['Date'].date()} | {row['Description'][:50]}")
+                with col_amt:
+                    st.write(f"${row['Amount']:,.2f}")
+                with col_del:
+                    if st.button("X", key=f"del_{idx}_{row['Date']}_{row['Amount']}"):
+                        try:
+                            delete_transaction(
+                                row['Date'].strftime('%Y-%m-%d'),
+                                float(row['Amount']),
+                                row['Description'],
+                                profile.lower()
+                            )
+                            st.session_state.transactions = st.session_state.transactions.drop(idx)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Delete failed: {e}")
 
 
 # --- TAB 3: DEBT TRACKER ---
