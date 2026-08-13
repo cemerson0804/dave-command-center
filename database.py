@@ -131,3 +131,51 @@ def delete_transactions_by_month(year, month, profile="cody"):
     ).gte('date', start_date).lt('date', end_date).execute()
     
     return len(result.data) if result.data else 0
+
+
+# =============================================================================
+# BILL PAYMENT TRACKING
+# =============================================================================
+
+def get_bill_payments(profile, month, year):
+    """
+    Load bill payment statuses for a specific month.
+    Returns a dict: {bill_name: True/False}
+    """
+    client = get_supabase_client()
+    result = client.table('bill_payments').select('bill_name, paid').eq(
+        'profile', profile.lower()
+    ).eq('month', month).eq('year', year).execute()
+    
+    payments = {}
+    if result.data:
+        for row in result.data:
+            payments[row['bill_name']] = row['paid']
+    return payments
+
+
+def mark_bill_paid(bill_name, profile, month, year, paid=True):
+    """
+    Mark a bill as paid (or unpaid) for a specific month.
+    Uses upsert — creates the record if it doesn't exist, updates if it does.
+    """
+    client = get_supabase_client()
+    
+    record = {
+        "bill_name": bill_name,
+        "profile": profile.lower(),
+        "month": month,
+        "year": year,
+        "paid": paid,
+        "paid_date": datetime.now().strftime('%Y-%m-%d') if paid else None
+    }
+    
+    client.table('bill_payments').upsert(
+        record,
+        on_conflict='bill_name,profile,month,year'
+    ).execute()
+
+
+def mark_bill_unpaid(bill_name, profile, month, year):
+    """Move a bill back to unpaid (undo a paid mark)."""
+    mark_bill_paid(bill_name, profile, month, year, paid=False)

@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from transaction_parser import parse_csv_upload, get_spending_summary, get_spending_by_month, get_income_summary
-from database import save_transactions, load_transactions, get_transaction_count
+from database import save_transactions, load_transactions, get_transaction_count, get_bill_payments, mark_bill_paid, mark_bill_unpaid
 
 
 # =============================================================================
@@ -151,60 +151,106 @@ with tab1:
     st.header(f"Bills Board — {profile}")
     st.caption(f"{datetime(selected_year, selected_month, 1).strftime('%B %Y')}")
 
+    # Load payment statuses from database
+    try:
+        payment_status = get_bill_payments(profile, selected_month, selected_year)
+    except:
+        payment_status = {}
+
     today = datetime.now()
-    # Use current day if viewing current month, otherwise show all as "upcoming" or "paid"
     if selected_month == today.month and selected_year == today.year:
         current_day = today.day
     elif (selected_year < today.year) or (selected_year == today.year and selected_month < today.month):
-        current_day = 32  # Past month — everything shows as "paid"
+        current_day = 32
     else:
-        current_day = 0  # Future month — everything shows as "upcoming"
+        current_day = 0
 
-    upcoming, due_soon, paid, overdue = [], [], [], []
+    # Sort bills into columns based on SAVED payment status + date logic
+    paid_bills = []
+    unpaid_bills = []
 
     for bill in bills:
+        # Check if manually marked paid in the database
+        if payment_status.get(bill['name'], False):
+            paid_bills.append(bill)
+        else:
+            unpaid_bills.append(bill)
+
+    # Further sort unpaid into due soon, upcoming, overdue
+    due_soon = []
+    upcoming = []
+    overdue = []
+
+    for bill in unpaid_bills:
         due_day = bill['day']
         if current_day == 32:
-            paid.append(bill)
+            # Past month and not marked paid — overdue
+            overdue.append(bill)
         elif current_day == 0:
             upcoming.append(bill)
-        elif due_day < current_day - 5:
-            paid.append(bill)
-        elif due_day < current_day:
-            if bill.get('autopay', False):
-                paid.append(bill)
-            else:
-                overdue.append(bill)
+        elif due_day < current_day - 2:
+            overdue.append(bill)
         elif due_day <= current_day + 7:
             due_soon.append(bill)
         else:
             upcoming.append(bill)
 
+    # Display columns
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.subheader(f"Paid ({len(paid)})")
-        for bill in paid:
+        st.subheader(f"Paid ({len(paid_bills)})")
+        for bill in paid_bills:
             st.success(f"**{bill['name']}**\n${bill['amount']:,.2f}")
+            if st.button(f"Undo", key=f"undo_{bill['name']}_{selected_month}_{selected_year}"):
+                try:
+                    mark_bill_unpaid(bill['name'], profile, selected_month, selected_year)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
     with col2:
         st.subheader(f"Due Soon ({len(due_soon)})")
         for bill in due_soon:
             st.warning(f"**{bill['name']}**\n${bill['amount']:,.2f} — due {bill['day']}th")
+            if st.button(f"Mark Paid", key=f"pay_{bill['name']}_{selected_month}_{selected_year}"):
+                try:
+                    mark_bill_paid(bill['name'], profile, selected_month, selected_year)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
     with col3:
         st.subheader(f"Upcoming ({len(upcoming)})")
         for bill in upcoming:
             st.info(f"**{bill['name']}**\n${bill['amount']:,.2f} — due {bill['day']}th")
+            if st.button(f"Mark Paid", key=f"pay_{bill['name']}_{selected_month}_{selected_year}_up"):
+                try:
+                    mark_bill_paid(bill['name'], profile, selected_month, selected_year)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
     with col4:
         st.subheader(f"Overdue ({len(overdue)})")
         for bill in overdue:
             st.error(f"**{bill['name']}**\n${bill['amount']:,.2f} — WAS DUE {bill['day']}th!")
+            if st.button(f"Mark Paid", key=f"pay_{bill['name']}_{selected_month}_{selected_year}_od"):
+                try:
+                    mark_bill_paid(bill['name'], profile, selected_month, selected_year)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
     st.divider()
     total_bills = sum(b['amount'] for b in bills)
-    st.metric(f"Total Monthly Bills ({profile})", f"${total_bills:,.2f}")
+    total_paid = sum(b['amount'] for b in paid_bills)
+    total_remaining = total_bills - total_paid
+
+    col_m1, col_m2, col_m3 = st.columns(3)
+    col_m1.metric("Total Monthly Bills", f"${total_bills:,.2f}")
+    col_m2.metric("Paid So Far", f"${total_paid:,.2f}")
+    col_m3.metric("Still Owed", f"${total_remaining:,.2f}")
 
 
 # --- TAB 2: SPENDING ---
