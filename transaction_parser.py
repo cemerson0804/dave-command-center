@@ -26,7 +26,7 @@ CATEGORY_RULES = [
     ("PAYROLL", "Income"),
     ("Interest Paid", "Income"),
     ("ATM Fee Reimbursement", "Income"),
-    ("VENMO.*EMERSON", "Income"),
+    
     ("Return Check", "Income"),
 
     # === TRANSFERS ===
@@ -52,6 +52,8 @@ CATEGORY_RULES = [
     ("WELLS FARGO AUTO", "Bills-Auto"),
     ("TOYOTA ACH", "Bills-Auto"),
     ("ALFA MUTUAL INS", "Bills-Auto"),
+    ("US BANK", "Bills-Auto"),
+    ("U.S. BANK", "Bills-Auto"),
 
     # === BILLS: AUTO MAINTENANCE ===
     ("TOYOTA OF BROOKHAVEN", "Auto-Maintenance"),
