@@ -208,3 +208,37 @@ def delete_transaction(date, amount, description, profile="cody"):
         'profile', profile.lower()
     ).execute()
     return len(result.data) if result.data else 0
+
+def recategorize_all_transactions(category_rules):
+    """Re-apply category rules to all transactions in the database."""
+    import re as re_mod
+    client = get_supabase_client()
+    
+    all_rows = []
+    offset = 0
+    while True:
+        result = client.table('transactions').select('id, description, category').order('id').range(offset, offset + 999).execute()
+        if result.data:
+            all_rows.extend(result.data)
+            if len(result.data) < 1000:
+                break
+            offset += 1000
+        else:
+            break
+    
+    def categorize(desc):
+        if not desc:
+            return 'Uncategorized'
+        for pattern, cat in category_rules:
+            if re_mod.search(pattern, desc, re_mod.IGNORECASE):
+                return cat
+        return 'Uncategorized'
+    
+    updated = 0
+    for row in all_rows:
+        new_cat = categorize(row['description'])
+        if new_cat != row['category']:
+            client.table('transactions').update({'category': new_cat}).eq('id', row['id']).execute()
+            updated += 1
+    
+    return updated, len(all_rows)

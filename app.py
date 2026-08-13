@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from transaction_parser import parse_csv_upload, get_spending_summary, get_spending_by_month, get_income_summary
-from database import save_transactions, load_transactions, get_transaction_count, get_bill_payments, mark_bill_paid, mark_bill_unpaid, update_paid_date, delete_transaction
+from database import save_transactions, load_transactions, get_transaction_count, get_bill_payments, mark_bill_paid, mark_bill_unpaid, update_paid_date, delete_transaction, recategorize_all_transactions
 
 
 # =============================================================================
@@ -575,6 +575,18 @@ with tab5:
 
     else:
         st.write("No files staged. Drag and drop above.")
+
+    st.divider()
+    st.subheader("Maintenance")
+    if st.button("Re-categorize All Transactions", help="Re-applies the latest category rules to every transaction in the database. Use after rules are updated."):
+        try:
+            from transaction_parser import CATEGORY_RULES
+            updated, total = recategorize_all_transactions(CATEGORY_RULES)
+            st.success(f"Done. {updated} of {total} transactions re-categorized.")
+            st.session_state.db_loaded = False
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error: {e}")
 
     st.divider()
     st.subheader("Data Status")
