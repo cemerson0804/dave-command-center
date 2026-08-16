@@ -83,6 +83,17 @@ def load_income():
     """Load income data from secrets."""
     return dict(st.secrets.get("cody_income", {}))
 
+def format_apr(bill):
+    """Return a display string for a bill's APR, or empty string if unknown/missing."""
+    apr = bill.get('apr')
+    if apr is None or apr == "":
+        return ""
+    if isinstance(apr, (int, float)):
+        return f" | {apr}% APR"
+    return f" | APR: {apr}"
+
+
+
 
 # =============================================================================
 # INITIALIZE SESSION STATE
@@ -246,7 +257,7 @@ with tab1:
     with col2:
         st.subheader(f"Due Soon ({len(due_soon)})")
         for bill in due_soon:
-            st.warning(f"**{bill['name']}**\n${bill['amount']:,.2f} --- due {bill['day']}th")
+            st.warning(f"**{bill['name']}**\n${bill['amount']:,.2f} --- due {bill['day']}th{format_apr(bill)}")
             if st.button(f"Mark Paid", key=f"pay_{bill['name']}_{selected_month}_{selected_year}"):
                 try:
                     mark_bill_paid(bill['name'], profile, selected_month, selected_year)
@@ -257,7 +268,7 @@ with tab1:
     with col3:
         st.subheader(f"Upcoming ({len(upcoming)})")
         for bill in upcoming:
-            st.info(f"**{bill['name']}**\n${bill['amount']:,.2f} --- due {bill['day']}th")
+            st.info(f"**{bill['name']}**\n${bill['amount']:,.2f} --- due {bill['day']}th{format_apr(bill)}")
             if st.button(f"Mark Paid", key=f"pay_{bill['name']}_{selected_month}_{selected_year}_up"):
                 try:
                     mark_bill_paid(bill['name'], profile, selected_month, selected_year)

@@ -242,3 +242,98 @@ def recategorize_all_transactions(category_rules):
             updated += 1
     
     return updated, len(all_rows)
+
+
+# =============================================================================
+# LIVE DEBT BALANCE TRACKING
+# =============================================================================
+
+def get_debts(profile="cody"):
+    """Load all debts for a profile, ordered by balance ascending (snowball order)."""
+    client = get_supabase_client()
+    result = client.table('debts').select('*').eq('profile', profile.lower()).order('balance').execute()
+    return result.data if result.data else []
+
+
+def seed_debt(name, profile, balance, apr, minimum, status, promo_deadline=None, killed_date=None, daily_interest=0):
+    """Insert or update a debt record (used for initial setup/migration)."""
+    client = get_supabase_client()
+    record = {
+        "name": name,
+        "profile": profile.lower(),
+        "balance": balance,
+        "apr": apr,
+        "minimum": minimum,
+        "status": status,
+        "promo_deadline": promo_deadline,
+        "killed_date": killed_date,
+        "daily_interest": daily_interest,
+    }
+    client.table('debts').upsert(record, on_conflict='name,profile').execute()
+
+
+def adjust_debt_balance(name, profile, delta):
+    """
+    Adjust a debt's balance by delta.
+    Negative delta = payment reduces balance.
+    Positive delta = undo increases balance back.
+    Balance never goes below zero.
+    Returns the new balance, or None if the debt wasn't found.
+    """
+    client = get_supabase_client()
+    result = client.table('debts').select('balance').eq('name', name).eq('profile', profile.lower()).execute()
+    if not result.data:
+        return None
+    current = float(result.data[0]['balance'])
+    new_balance = max(0, current + delta)
+    client.table('debts').update({
+        "balance": new_balance,
+        "updated_at": datetime.now().isoformat()
+    }).eq('name', name).eq('profile', profile.lower()).execute()
+    return new_balance
+
+
+# =============================================================================
+# DYNAMIC BILLS MANAGEMENT
+# =============================================================================
+
+def get_bills(profile):
+    """Load all active bills for a profile from the database."""
+    client = get_supabase_client()
+    if profile.lower() == "household":
+        result = client.table('bills').select('*').eq('active', True).order('day').execute()
+    else:
+        result = client.table('bills').select('*').eq('profile', profile.lower()).eq('active', True).order('day').execute()
+    return result.data if result.data else []
+
+
+def add_bill(name, profile, amount, day, autopay=False, apr=None, category=None):
+    """Add a new bill to the database."""
+    client = get_supabase_client()
+    record = {
+        "name": name,
+        "profile": profile.lower(),
+        "amount": amount,
+        "day": day,
+        "autopay": autopay,
+        "apr": apr,
+        "category": category,
+        "active": True
+    }
+    client.table('bills').upsert(record, on_conflict='name,profile').execute()
+
+
+def update_bill(name, profile, **kwargs):
+    """Update a bill's fields (amount, day, autopay, apr, category, active)."""
+    client = get_supabase_client()
+    client.table('bills').update(kwargs).eq('name', name).eq('profile', profile.lower()).execute()
+
+
+def archive_bill(name, profile):
+    """Mark a bill as inactive (paid off / no longer owed). Removes from Bills Board."""
+    update_bill(name, profile, active=False)
+
+
+def reactivate_bill(name, profile):
+    """Bring a bill back to active status."""
+    update_bill(name, profile, active=True)
